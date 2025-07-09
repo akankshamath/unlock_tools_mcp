@@ -1,0 +1,30 @@
+{
+  "name": "mcp-stateful",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "tsc",
+    "deploy:cf": "wrangler deploy",
+    "deploy:aws": "serverless deploy",
+    "deploy:all": "npm run deploy:cf && npm run deploy:aws",
+    "dev:cf": "wrangler dev",
+    "dev:aws": "serverless offline",
+    "test:cf": "curl https://your-worker.workers.dev/health",
+    "test:aws": "curl https://your-api.execute-api.region.amazonaws.com/dev/health"
+  },
+  "dependencies": {
+    "@hono/mcp": "^0.1.0",
+    "@modelcontextprotocol/sdk": "^1.13.1",
+    "hono": "^4.0.0",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.0.0",
+    "@types/aws-lambda": "^8.10.0",
+    "@types/node": "^20.0.0",
+    "serverless": "^3.40.0",
+    "serverless-offline": "^13.0.0",
+    "serverless-plugin-typescript": "^2.1.5",
+    "typescript": "^5.0.0",
+    "wrangler": "^4.22.0"
+  }
+}
