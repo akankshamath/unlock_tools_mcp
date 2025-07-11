@@ -1,13 +1,15 @@
-// stateful-mcp-server.ts
 import { Hono } from 'hono';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { StreamableHTTPTransport } from '@hono/mcp';
 import type { DurableObjectState,  } from '@cloudflare/workers-types'
 
+interface Env {
+  SESSION_STORE: DurableObjectState
+}
+
 export class SessionStore {
   private state: DurableObjectState;
-  private sessions: Record<string, { unlocked: boolean }> = {};
 
   constructor(state: DurableObjectState) {
     this.state = state;
@@ -18,13 +20,13 @@ export class SessionStore {
     const sessionId = url.searchParams.get('sessionId');
 
     if (request.method === 'GET' && sessionId) {
-      const session = this.sessions[sessionId] || { unlocked: false };
+      const session = await this.state.storage.get(sessionId) || { unlocked: false };
       return new Response(JSON.stringify(session));
     }
 
     if (request.method === 'PUT' && sessionId) {
       const data = await request.json() as { unlocked: boolean };
-      this.sessions[sessionId] = data;
+      await this.state.storage.put(sessionId, data);
       return new Response(JSON.stringify({ success: true }));
     }
 
