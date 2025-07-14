@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { StreamableHTTPTransport } from '@hono/mcp';
+const app = new Hono();
 export class SessionStore {
     state;
     constructor(state) {
@@ -22,10 +23,7 @@ export class SessionStore {
         return new Response('Not found', { status: 404 });
     }
 }
-const sessionState = {};
-const transports = {};
 const servers = {};
-const app = new Hono();
 const baseTool = {
     name: "unlock_more_tools",
     description: "Unlock more tools!",
@@ -60,9 +58,24 @@ const unlockedTools = [
         }
     }
 ];
-function createMcpServer(sessionId) {
+async function getSessionData(sessionId, env) {
+    const id = env.SESSION_STORE.idFromName(sessionId);
+    const sessionStore = env.SESSION_STORE.get(id);
+    const response = await sessionStore.fetch(`https://dummy.com?sessionId=${sessionId}`);
+    return await response.json();
+}
+async function updateSessionData(sessionId, env, data) {
+    const id = env.SESSION_STORE.idFromName(sessionId);
+    const sessionStore = env.SESSION_STORE.get(id);
+    await sessionStore.fetch(`https://dummy.com?sessionId=${sessionId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+    });
+}
+function createMcpServer(sessionId, env) {
     const server = new Server({
-        name: "Hono Stateful MCP Server",
+        name: "Stateful MCP Server",
         version: "1.0.0"
     }, {
         capabilities: {
@@ -70,7 +83,7 @@ function createMcpServer(sessionId) {
         }
     });
     server.setRequestHandler(ListToolsRequestSchema, async () => {
-        const sessionData = sessionState[sessionId];
+        const sessionData = await getSessionData(sessionId, env);
         if (!sessionData?.unlocked) {
             return {
                 tools: [baseTool]
@@ -83,7 +96,7 @@ function createMcpServer(sessionId) {
     server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const { name, arguments: args } = request.params;
         if (name === "unlock_more_tools") {
-            const sessionData = sessionState[sessionId];
+            const sessionData = await getSessionData(sessionId, env);
             if (sessionData?.unlocked) {
                 return {
                     content: [
@@ -94,7 +107,7 @@ function createMcpServer(sessionId) {
                     ]
                 };
             }
-            sessionState[sessionId] = { unlocked: true };
+            await updateSessionData(sessionId, env, { unlocked: true });
             const toolNames = unlockedTools.map(tool => tool.name);
             try {
                 server.notification({
@@ -131,7 +144,7 @@ function createMcpServer(sessionId) {
                 ]
             };
         }
-        const sessionData = sessionState[sessionId];
+        const sessionData = await getSessionData(sessionId, env);
         if (!sessionData?.unlocked) {
             return {
                 content: [
@@ -194,11 +207,18 @@ app.all('/mcp/:sessionId?', async (c) => {
     if (!sessionId) {
         sessionId = 'default-session';
     }
-    if (!sessionState[sessionId]) {
-        sessionState[sessionId] = { unlocked: false };
+    if (!sessionId) {
+        let sessionId = 'default-session';
+    }
+    const env = c.env;
+    try {
+        await getSessionData(sessionId, env);
+    }
+    catch {
+        await updateSessionData(sessionId, env, { unlocked: false });
     }
     if (!servers[sessionId]) {
-        servers[sessionId] = createMcpServer(sessionId);
+        servers[sessionId] = createMcpServer(sessionId, env);
     }
     const transport = new StreamableHTTPTransport();
     await servers[sessionId].connect(transport);
@@ -209,50 +229,38 @@ app.get('/', (c) => {
         message: 'Server is running',
         timestamp: new Date().toISOString(),
         version: '1.0.0',
-        activeSessions: Object.keys(sessionState).length,
-        sessions: Object.keys(sessionState).map(id => ({
-            id: id.substring(0, 8) + '...',
-            unlocked: sessionState[id].unlocked
-        }))
     });
 });
-app.get('/session/:sessionId', (c) => {
+app.get('/session/:sessionId', async (c) => {
     const sessionId = c.req.param('sessionId');
-    const sessionData = sessionState[sessionId];
-    if (!sessionData) {
-        return c.json({ error: 'Session not found' }, 404);
-    }
-    return c.json({
-        sessionId: sessionId.substring(0, 8) + '...',
-        unlocked: sessionData.unlocked,
-        availableTools: sessionData.unlocked
-            ? [baseTool.name, ...unlockedTools.map(t => t.name)]
-            : [baseTool.name]
-    });
-});
-app.get('/sessions', (c) => {
-    return c.json({
-        totalSessions: Object.keys(sessionState).length,
-        sessions: Object.entries(sessionState).map(([id, data]) => ({
-            id: id.substring(0, 8) + '...',
-            unlocked: data.unlocked,
-            availableTools: data.unlocked
+    const env = c.env;
+    try {
+        const sessionData = await getSessionData(sessionId, env);
+        return c.json({
+            sessionId: sessionId.substring(0, 8) + '...',
+            unlocked: sessionData.unlocked,
+            availableTools: sessionData.unlocked
                 ? [baseTool.name, ...unlockedTools.map(t => t.name)]
                 : [baseTool.name]
-        }))
-    });
-});
-app.post('/debug/unlock/:sessionId', (c) => {
-    const sessionId = c.req.param('sessionId');
-    const sessionData = sessionState[sessionId];
-    if (!sessionData) {
+        });
+    }
+    catch {
         return c.json({ error: 'Session not found' }, 404);
     }
-    sessionState[sessionId] = { unlocked: true };
-    return c.json({
-        message: `Session ${sessionId.substring(0, 8)}... unlocked`,
-        unlocked: true,
-        availableTools: [baseTool.name, ...unlockedTools.map(t => t.name)]
-    });
+});
+app.post('/debug/unlock/:sessionId', async (c) => {
+    const sessionId = c.req.param('sessionId');
+    const env = c.env;
+    try {
+        await updateSessionData(sessionId, env, { unlocked: true });
+        return c.json({
+            message: `Session ${sessionId.substring(0, 8)}... unlocked`,
+            unlocked: true,
+            availableTools: [baseTool.name, ...unlockedTools.map(t => t.name)]
+        });
+    }
+    catch {
+        return c.json({ error: 'Session not found' }, 404);
+    }
 });
 export default app;

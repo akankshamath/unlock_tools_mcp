@@ -5,7 +5,7 @@
   "compatibility_date": "2025-07-01",
   "durable_objects": {
     "bindings": [
-      { "name": "SESSION", "class_name": "SessionStore" }
+      { "name": "SESSION_STORE", "class_name": "SessionStore" }
     ]
   },
   "migrations": [
