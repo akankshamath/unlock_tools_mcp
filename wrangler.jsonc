@@ -14,9 +14,7 @@
       "new_sqlite_classes": ["SessionStore"]
     }
   ],
-  "build": {
-    "command": "pnpm run build"
-  }
+
   // "compatibility_flags": [
   //   "nodejs_compat"
   // ],
