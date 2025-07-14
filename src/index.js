@@ -1,11 +1,9 @@
-// stateful-mcp-server.ts
 import { Hono } from 'hono';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { StreamableHTTPTransport } from '@hono/mcp';
 export class SessionStore {
     state;
-    sessions = {};
     constructor(state) {
         this.state = state;
     }
@@ -13,12 +11,12 @@ export class SessionStore {
         const url = new URL(request.url);
         const sessionId = url.searchParams.get('sessionId');
         if (request.method === 'GET' && sessionId) {
-            const session = this.sessions[sessionId] || { unlocked: false };
+            const session = await this.state.storage.get(sessionId) || { unlocked: false };
             return new Response(JSON.stringify(session));
         }
         if (request.method === 'PUT' && sessionId) {
             const data = await request.json();
-            this.sessions[sessionId] = data;
+            await this.state.storage.put(sessionId, data);
             return new Response(JSON.stringify({ success: true }));
         }
         return new Response('Not found', { status: 404 });
@@ -194,7 +192,7 @@ function createMcpServer(sessionId) {
 app.all('/mcp/:sessionId?', async (c) => {
     let sessionId = c.req.param('sessionId');
     if (!sessionId) {
-        sessionId = crypto.randomUUID();
+        sessionId = 'default-session';
     }
     if (!sessionState[sessionId]) {
         sessionState[sessionId] = { unlocked: false };
